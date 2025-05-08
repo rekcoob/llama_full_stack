@@ -10,7 +10,7 @@ function App() {
     const res = await fetch('http://localhost:8000/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: input }),
+      body: JSON.stringify({ prompt: input }),
     })
 
     const data = await res.json()

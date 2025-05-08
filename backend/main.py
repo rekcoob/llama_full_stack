@@ -8,7 +8,10 @@ app = FastAPI()
 # 🔧 CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # frontend adresa
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -34,4 +37,7 @@ async def chat(req: ChatRequest):
     }
     async with httpx.AsyncClient() as client:
         response = await client.post(OLLAMA_URL, json=payload)
-        return response.json()
+        # return response.json()
+
+        data = response.json()
+        return { "reply": data["response"] } 
