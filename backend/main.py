@@ -35,7 +35,7 @@ async def chat(req: ChatRequest):
         "prompt": req.prompt,
         "stream": False
     }
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(OLLAMA_URL, json=payload)
         # return response.json()
 
