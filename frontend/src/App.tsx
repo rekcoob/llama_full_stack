@@ -5,6 +5,7 @@ function App() {
   const [response, setResponse] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [personality, setPersonality] = useState('professor')
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -16,7 +17,7 @@ function App() {
       const res = await fetch('http://localhost:8000/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: input }),
+        body: JSON.stringify({ prompt: input, personality: personality }),
       })
 
       if (!res.ok) {
@@ -35,7 +36,19 @@ function App() {
 
   return (
     <div style={{ padding: '2rem' }}>
-      <h1>AI Chat</h1>
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        <h1>AI Chat</h1>
+        <select
+          value={personality}
+          onChange={(e) => setPersonality(e.target.value)}
+          style={{ marginLeft: '2rem', padding: '0.5rem', height: '40px' }}
+        >
+          <option value='professor'>Profesor</option>
+          <option value='friend'>Priateľ</option>
+          <option value='jokester'>Vtipálek</option>
+          <option value='assistant'>Asistent</option>
+        </select>
+      </div>
       <form onSubmit={handleSubmit}>
         <input
           value={input}
@@ -43,6 +56,7 @@ function App() {
           placeholder='Napíš otázku...'
           style={{ width: '300px', padding: '0.5rem' }}
         />
+
         {loading ? (
           <div
             style={{
