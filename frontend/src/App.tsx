@@ -1,4 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+
+type DialogueItem = {
+  agent: string
+  response: string
+}
 
 function App() {
   const [input, setInput] = useState('')
@@ -6,18 +11,38 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [personality, setPersonality] = useState('professor')
+  const [dialogue, setDialogue] = useState<DialogueItem[]>([])
+  const [countdown, setCountdown] = useState<number | null>(null)
+
+  useEffect(() => {
+    let timer: number
+
+    if (loading && countdown !== null && countdown > 0) {
+      timer = setInterval(() => {
+        setCountdown((prev) => (prev !== null ? prev - 1 : null))
+      }, 1000)
+    }
+
+    if (!loading) {
+      setCountdown(null) // zastav odpočítavanie, keď sa načítavanie skončí
+    }
+
+    return () => clearInterval(timer)
+  }, [loading, countdown])
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setLoading(true)
     setError('')
     setResponse('')
+    setCountdown(300) // spusti odpočítavanie z 300 sekúnd
 
     try {
       const res = await fetch('http://localhost:8000/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: input, personality: personality }),
+        // body: JSON.stringify({ prompt: input, personality: personality }),
+        body: JSON.stringify({ prompt: input }),
       })
 
       if (!res.ok) {
@@ -26,6 +51,7 @@ function App() {
 
       const data = await res.json()
       setResponse(data.reply)
+      setDialogue(data.dialogue)
     } catch (err) {
       console.error(err)
       setError('Nepodarilo sa získať odpoveď od AI.')
@@ -58,19 +84,22 @@ function App() {
         />
 
         {loading ? (
-          <div
-            style={{
-              display: 'inline-block',
-              marginLeft: '1rem',
-              width: '24px',
-              height: '24px',
-              border: '3px solid #ccc',
-              borderTop: '3px solid #333',
-              borderRadius: '50%',
-              animation: 'spin 1s linear infinite',
-              verticalAlign: 'middle', // voliteľné doladenie zarovnania
-            }}
-          />
+          <div className=''>
+            <div
+              style={{
+                display: 'inline-block',
+                marginLeft: '1rem',
+                width: '24px',
+                height: '24px',
+                border: '3px solid #ccc',
+                borderTop: '3px solid #333',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite',
+                verticalAlign: 'middle', // voliteľné doladenie zarovnania
+              }}
+            />
+            <span>{countdown}s</span>
+          </div>
         ) : (
           <button type='submit' style={{ marginLeft: '1rem' }}>
             Poslať
@@ -88,6 +117,29 @@ function App() {
           </>
         )}
       </div>
+
+      <div style={{ marginTop: '2rem' }}>
+        <h3>AI Dialog:</h3>
+        {dialogue.map((item, index) => (
+          <div key={index}>
+            <strong>{item.agent}:</strong>
+            <p>{item.response}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* 
+      {dialogue.length > 0 && (
+        <div style={{ marginTop: '2rem' }}>
+          <h3>AI Dialog:</h3>
+          {dialogue.map((item, index) => (
+            <div key={index}>
+              <strong>{item.agent}:</strong>
+              <p>{item.response}</p>
+            </div>
+          ))}
+        </div>
+      )} */}
 
       {/* Inline CSS pre animáciu */}
       <style>

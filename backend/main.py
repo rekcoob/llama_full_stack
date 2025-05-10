@@ -21,38 +21,44 @@ app.add_middleware(
 OLLAMA_URL = "http://ollama:11434/api/generate"
 
 class ChatRequest(BaseModel):
-    prompt: str
-    personality: str  # Nový parameter pre výber osobnosti
+    prompt: str  
 
 @app.get("/")
 async def root():
     return {"message": "Backend is running"}
 
-# @app.post("/chat")
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
-    # Mapovanie osobností na preddefinované prompt správy
     personalities = {
-        "professor": "Odpovedz na túto otázku ako profesor na univerzite.",
-        "friend": "Odpovedz na túto otázku priateľsky a neformálne.",
-        "jokester": "Odpovedz na túto otázku s humorom a vtipom.",
-        "assistant": "Odpovedz na túto otázku ako asistent s užitočnými radami."
+        "professor": "You are a serious and thoughtful professor. Answer briefly and clearly, in 2-3 sentences.",
+        "student": "You are a witty and curious student. Reply playfully and shortly, no more than 2 sentences."
     }
-    # Získať prompt pre vybranú osobnosť
-    personality_prompt = personalities.get(req.personality, "Odpovedz na túto otázku neutrálne.")
-    
-    # Kombinuj pôvodný prompt s osobnostným promptom
-    combined_prompt = f"{personality_prompt} {req.prompt}"
 
-    payload = {
-        "model": "llama3",  # alebo iný model nainštalovaný cez Ollama
-        "prompt": combined_prompt,
-        "stream": False
-    }
-    
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(OLLAMA_URL, json=payload)
-        # return response.json()
+    dialogue = []
 
-        data = response.json()
-        return { "reply": data["response"] } 
+    # Začiatočný vstup od používateľa → ide ako otázka pre profesora
+    current_message = f"{personalities['professor']}\nAnswer the following question:\n{req.prompt}"
+    current_speaker = "Professor"
+
+    for i in range(5):  # 🔁 5 kôl dialógu
+        payload = {
+            "model": "llama3",
+            "prompt": current_message,
+            "stream": False
+        }
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(OLLAMA_URL, json=payload)
+            reply = response.json()["response"].strip()
+
+        dialogue.append({"agent": current_speaker, "response": reply})
+
+        # Priprav ďalšie kolo
+        if current_speaker == "Professor":
+            current_speaker = "Student"
+            current_message = f"{personalities['student']}\nHere is what the professor said:\n\"{reply}\"\nNow respond to the professor."
+        else:
+            current_speaker = "Professor"
+            current_message = f"{personalities['professor']}\nHere is what the student said:\n\"{reply}\"\nNow respond to the student."
+
+    return { "dialogue": dialogue }
