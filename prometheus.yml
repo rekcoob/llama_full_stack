@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 10s # Interval, ako často sa majú zbierať metriky
+
+scrape_configs:
+  - job_name: 'backend'
+    static_configs:
+      - targets: ['backend:8000'] # Cieľová adresa backendu, kde bude dostupný endpoint pre metriky (t.j. /metrics endpoint)
+
+
+  # Ak by si chcel sledovať aj iné služby ako ollama alebo frontend, môžeš pridať aj ďalšie "scrape_configs"

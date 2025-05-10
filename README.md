@@ -13,10 +13,16 @@
    git clone https://https://github.com/rekcoob/llama_full_stack
    ```
 2. **Run Locally**
+
    ```bash
    docker compose up --build
    ```
+
    Visit `http://localhost:3000`
+
+3. **Prometheus & Grafana Setup**
+   Grafana Url to connect to Prometheus between Docker containers in this setup:
+   http://prometheus:9090
 
 ### Chat with CLI (Without Frontend)
 
