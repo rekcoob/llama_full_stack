@@ -64,4 +64,8 @@ async def chat(req: ChatRequest):
             current_speaker = "Professor"
             current_message = f"{personalities['professor']}\nHere is what the student said:\n\"{reply}\"\nNow respond to the student."
 
-    return { "dialogue": dialogue }
+    # return { "dialogue": dialogue }
+    return {
+        "reply": dialogue[-1]["response"],
+        "dialogue": dialogue
+    }

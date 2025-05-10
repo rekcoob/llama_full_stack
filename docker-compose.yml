@@ -17,7 +17,6 @@ services:
       - '8000'
     environment:
       - PROMETHEUS_ENABLE=true # Týmto môžeme signalizovať backendu, že metriky sa majú exportovať
-    # Pridanie Prometheus exporteru pre backend aplikáciu (používaj knižnicu ako prometheus_fastapi_instrumentator)
 
   frontend:
     build: ./frontend
