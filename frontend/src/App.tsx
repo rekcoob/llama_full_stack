@@ -1,27 +1,27 @@
 import { useState, useEffect } from 'react'
+import ChatForm from './components/ChatForm'
+import DialogVisualization from './components/DialogVisualization'
+import PersonalitySelector from './components/PersonalitySelector'
+import ChatMessages from './components/ChatMessages'
+import { ChatProvider } from './context/ChatContext'
 import {
-  ReactFlow,
-  Background,
-  Controls,
+  // ReactFlow,
+  // Background,
+  // Controls,
   // MiniMap,
   type Edge,
   type Node,
-  Position, // <== 🔧 PRIDAJ TOTO
+  Position,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-
-type DialogueItem = {
-  agent: string
-  response: string
-  timestamp?: string
-  score?: number
-}
+import type { DialogueItem } from './types'
 
 function App() {
   const [input, setInput] = useState('')
   const [response, setResponse] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
   const [personality, setPersonality] = useState('professor')
   const [dialogue, setDialogue] = useState<DialogueItem[]>([])
   const [countdown, setCountdown] = useState<number | null>(null)
@@ -66,7 +66,6 @@ function App() {
     dialogue.forEach((item, index) => {
       const nodeId = `node-${index}`
       const isCollapsed = collapsedNodes.has(nodeId)
-
       const shortText =
         item.response.split('\n')[0].slice(0, 50) +
         (item.response.length > 50 ? '...' : '')
@@ -113,132 +112,134 @@ function App() {
     setLoading(true)
     setError('')
     setResponse('')
+    setDialogue([])
     setCountdown(300)
 
     try {
-      const res = await fetch('http://localhost:8000/api/chat', {
+      const res = await fetch('http://localhost:8000/api/chat-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: input }),
       })
 
-      if (!res.ok) {
-        throw new Error(`Server error: ${res.status}`)
+      if (!res.ok || !res.body) {
+        throw new Error(`Stream error: ${res.status}`)
       }
 
-      const data = await res.json()
-      const enrichedDialogue = data.dialogue.map((item: DialogueItem) => ({
-        ...item,
-        timestamp: new Date().toLocaleTimeString(),
-        score: Math.random().toFixed(2),
-      }))
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder('utf-8')
 
-      setResponse(data.reply)
-      setDialogue(enrichedDialogue)
-      dialogueToFlow(enrichedDialogue)
+      let buffer = ''
+      const runningDialogue: DialogueItem[] = []
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+
+        const events = buffer.split('\n\n')
+        buffer = events.pop() || ''
+
+        for (const evt of events) {
+          if (evt.startsWith('data:')) {
+            const json = JSON.parse(evt.slice(5).trim())
+            const { agent, token } = json
+
+            // nájdi poslednú repliku od daného agenta
+            const lastItem = runningDialogue[runningDialogue.length - 1]
+            if (!lastItem || lastItem.agent !== agent) {
+              runningDialogue.push({
+                agent,
+                response: token,
+                timestamp: new Date().toLocaleTimeString(),
+                score: Math.random(), // alebo pevne 0.85
+              })
+            } else {
+              lastItem.response += token
+            }
+
+            // aktualizuj stav priebežne
+            setDialogue([...runningDialogue])
+            setResponse(
+              runningDialogue
+                .map((d) => `${d.agent}: ${d.response}`)
+                .join('\n\n')
+            )
+            dialogueToFlow(runningDialogue)
+          }
+        }
+      }
     } catch (err) {
       console.error(err)
-      setError('Nepodarilo sa získať odpoveď od AI.')
+      setError('Chyba pri načítaní streamu.')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div style={{ padding: '2rem' }}>
-      <div style={{ display: 'flex', alignItems: 'center' }}>
-        <h1>AI Chat</h1>
-        <select
-          value={personality}
-          onChange={(e) => setPersonality(e.target.value)}
-          style={{ marginLeft: '2rem', padding: '0.5rem', height: '40px' }}
-        >
-          <option value='professor'>Profesor</option>
-          <option value='friend'>Priateľ</option>
-          <option value='jokester'>Vtipálek</option>
-          <option value='assistant'>Asistent</option>
-        </select>
-      </div>
-      <form onSubmit={handleSubmit}>
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder='Napíš otázku...'
-          style={{ width: '300px', padding: '0.5rem' }}
+    <ChatProvider>
+      <div style={{ padding: '2rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <h1>AI Chat</h1>
+          <PersonalitySelector
+            personality={personality}
+            setPersonality={setPersonality}
+          />
+        </div>
+
+        <ChatForm
+          input={input}
+          setInput={setInput}
+          handleSubmit={handleSubmit}
+          loading={loading}
+          countdown={countdown}
         />
 
-        {loading ? (
-          <div className=''>
-            <div
-              style={{
-                display: 'inline-block',
-                marginLeft: '1rem',
-                width: '24px',
-                height: '24px',
-                border: '3px solid #ccc',
-                borderTop: '3px solid #333',
-                borderRadius: '50%',
-                animation: 'spin 1s linear infinite',
-                verticalAlign: 'middle', // voliteľné doladenie zarovnania
-              }}
-            />
-            <span>{countdown}s</span>
-          </div>
-        ) : (
-          <button type='submit' style={{ marginLeft: '1rem' }}>
-            Poslať
-          </button>
-        )}
-      </form>
+        <div style={{ marginTop: '2rem' }}>
+          {loading && <p>Čakám na odpoveď...</p>}
+          {error && <p style={{ color: 'red' }}>{error}</p>}
+          {!loading && !error && response && (
+            <>
+              <strong>Odpoveď AI:</strong>
+              <p>{response}</p>
+            </>
+          )}
+        </div>
 
-      <div style={{ marginTop: '2rem' }}>
-        <h3>AI Dialog:</h3>
-        {dialogue.length > 0 && (
-          <div style={{ marginTop: '2rem' }}>
-            <h3>Vizualizácia dialógu:</h3>
-            <div
-              style={{ height: 600, border: '1px solid #ccc' }}
-              onClick={(e) => {
-                const target = e.target as HTMLElement
-                const nodeId = target
-                  .closest('[data-id]')
-                  ?.getAttribute('data-id')
-                if (nodeId) {
-                  toggleCollapse(nodeId)
-                }
-              }}
-            >
-              <ReactFlow nodes={nodes} edges={edges} fitView>
-                {/* <MiniMap /> */}
-                <Controls />
-                <Background />
-              </ReactFlow>
+        <div style={{ marginTop: '2rem' }}>
+          {dialogue.length > 0 && (
+            <div style={{ marginTop: '2rem' }}>
+              <h3>AI Dialog:</h3>
+              <ChatMessages dialogue={dialogue} />
             </div>
-          </div>
-        )}
-      </div>
+          )}
 
-      <div style={{ marginTop: '2rem' }}>
-        {loading && <p>Čakám na odpoveď...</p>}
-        {error && <p style={{ color: 'red' }}>{error}</p>}
-        {!loading && !error && response && (
-          <>
-            <strong>Odpoveď AI:</strong>
-            <p>{response}</p>
-          </>
-        )}
-      </div>
+          {dialogue.length > 0 && (
+            <div style={{ marginTop: '2rem' }}>
+              <h3>Dialog VIsualisation:</h3>
 
-      {/* Inline CSS pre animáciu */}
-      <style>
-        {`
+              <DialogVisualization
+                nodes={nodes}
+                edges={edges}
+                toggleCollapse={toggleCollapse}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Inline CSS pre animáciu */}
+        <style>
+          {`
           @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
           }
         `}
-      </style>
-    </div>
+        </style>
+      </div>
+    </ChatProvider>
   )
 }
 

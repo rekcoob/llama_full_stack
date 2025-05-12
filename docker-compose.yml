@@ -1,3 +1,4 @@
+# https://chatgpt.com/c/681fd5c7-e14c-8001-ad97-0ad424b53176
 services:
   ollama:
     image: ollama/ollama
@@ -10,13 +11,14 @@ services:
     build: ./backend
     ports:
       - '8000:8000'
+    # Závisí od: ollama – backend čaká, kým sa spustí.
     depends_on:
       - ollama
     # Exportovanie metriky pre Prometheus
     expose:
       - '8000'
     environment:
-      - PROMETHEUS_ENABLE=true # Týmto môžeme signalizovať backendu, že metriky sa majú exportovať
+      - PROMETHEUS_ENABLE=true # backend vďaka tejto premennej vie, že má exportovať metriky.
 
   frontend:
     build: ./frontend
@@ -34,6 +36,7 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
 
+  # Služba Grafana
   grafana:
     image: grafana/grafana
     container_name: grafana
@@ -43,9 +46,10 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin
     depends_on:
       - prometheus
+
 volumes:
   ollama_data:
-  prometheus_data:
+  # prometheus_data:
 
 networks:
   app_network:
