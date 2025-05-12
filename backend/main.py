@@ -3,12 +3,17 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_client import Gauge
 from pydantic import BaseModel
 import httpx
 import json
 import asyncio
 
 app = FastAPI()
+
+# Vytvorte Gauge metriku pre počet použitých tokenov
+token_usage_gauge = Gauge("ollama_token_usage_total", "Total number of tokens used in Ollama requests")
+
 instrumentator = Instrumentator()
 instrumentator.instrument(app).expose(app)
 
@@ -23,7 +28,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 OLLAMA_URL = "http://ollama:11434/api/generate"
 
@@ -42,26 +46,28 @@ async def chat(req: ChatRequest):
     }
 
     dialogue = []
+    total_tokens = 0
 
-    # Začiatočný vstup od používateľa → ide ako otázka pre profesora
     current_message = f"{personalities['professor']}\nAnswer the following question:\n{req.prompt}"
     current_speaker = "Professor"
 
-    for i in range(5):  # 🔁 5 kôl dialógu
+    for i in range(5):
         payload = {
             "model": "llama3",
             "prompt": current_message,
             "stream": False
-            # "stream": True  # ⬅️ Dôležité!
         }
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(OLLAMA_URL, json=payload)
-            reply = response.json()["response"].strip()
+            data = response.json()
+            reply = data["response"].strip()
+            tokens_in_reply = len(reply.split()) # Jednoduchý odhad
+            total_tokens += tokens_in_reply
+            token_usage_gauge.inc(tokens_in_reply) # Zvýšte metriku
 
-        dialogue.append({"agent": current_speaker, "response": reply})
+        dialogue.append({"agent": current_speaker, "response": reply, "tokens": tokens_in_reply})
 
-        # Priprav ďalšie kolo
         if current_speaker == "Professor":
             current_speaker = "Student"
             current_message = f"{personalities['student']}\nHere is what the professor said:\n\"{reply}\"\nNow respond to the professor."
@@ -69,10 +75,10 @@ async def chat(req: ChatRequest):
             current_speaker = "Professor"
             current_message = f"{personalities['professor']}\nHere is what the student said:\n\"{reply}\"\nNow respond to the student."
 
-    # return { "dialogue": dialogue }
     return {
         "reply": dialogue[-1]["response"],
-        "dialogue": dialogue
+        "dialogue": dialogue,
+        "totalTokens": total_tokens
     }
 
 
@@ -87,7 +93,10 @@ async def chat_stream(req: ChatRequest):
         current_message = f"{personalities['professor']}\nAnswer the following question:\n{req.prompt}"
         current_speaker = "Professor"
 
-        for _ in range(5):  # 5 kol dialógu
+        total_tokens = 0
+        total_computation_cost = 0
+
+        for _ in range(6):
             payload = {
                 "model": "llama3",
                 "prompt": current_message,
@@ -104,12 +113,17 @@ async def chat_stream(req: ChatRequest):
                                     chunk = chunk[6:]
                                 data = json.loads(chunk)
                                 token = data.get("response", "")
-                                yield f'data: {json.dumps({"agent": current_speaker, "token": token})}\n\n'
+
+                                token_count = len(token.split())
+                                total_tokens += token_count
+                                total_computation_cost += token_count * 0.0001
+                                token_usage_gauge.inc(token_count) # Zvýšte metriku
+
+                                yield f'data: {json.dumps({"agent": current_speaker, "token": token, "tokensUsed": total_tokens, "computationDetails": f"Energy usage approx: {total_computation_cost} kWh"})}\n\n'
                                 await asyncio.sleep(0.01)
                             except Exception as e:
                                 print("Stream parsing error:", e)
 
-            # Priprav ďalší vstup
             if current_speaker == "Professor":
                 current_speaker = "Student"
                 current_message = f"{personalities['student']}\nHere is what the professor said:\n\"{token}\"\nNow respond to the professor."

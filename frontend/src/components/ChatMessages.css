@@ -30,6 +30,13 @@
   margin-bottom: 0.25rem;
 }
 
+.bubble-footer {
+  font-size: 0.8em;
+  color: #888;
+  margin-top: 5px;
+  text-align: right;
+}
+
 .meta {
   margin-left: 1rem;
   font-size: 0.7rem;

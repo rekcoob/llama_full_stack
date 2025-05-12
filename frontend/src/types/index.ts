@@ -3,4 +3,6 @@ export type DialogueItem = {
   response: string
   timestamp?: string
   score?: number
+  tokensUsed?: number // počet tokenov
+  computationDetails?: string // informácie o technikách
 }

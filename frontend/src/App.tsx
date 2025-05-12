@@ -1,24 +1,16 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import ChatForm from './components/ChatForm'
 import DialogVisualization from './components/DialogVisualization'
 import PersonalitySelector from './components/PersonalitySelector'
 import ChatMessages from './components/ChatMessages'
+import CountdownTimer from './components/CountdownTimer'
 import { ChatProvider } from './context/ChatContext'
-import {
-  // ReactFlow,
-  // Background,
-  // Controls,
-  // MiniMap,
-  type Edge,
-  type Node,
-  Position,
-} from '@xyflow/react'
+import { type Edge, type Node, Position } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { DialogueItem } from './types'
 
 function App() {
   const [input, setInput] = useState('')
-  const [response, setResponse] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -26,26 +18,12 @@ function App() {
   const [dialogue, setDialogue] = useState<DialogueItem[]>([])
   const [countdown, setCountdown] = useState<number | null>(null)
 
+  const [showVisualization, setShowVisualization] = useState(false)
   const [nodes, setNodes] = useState<Node[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
   const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(new Set())
 
-  useEffect(() => {
-    // let timer: number
-    let timer: ReturnType<typeof setInterval>
-
-    if (loading && countdown !== null && countdown > 0) {
-      timer = setInterval(() => {
-        setCountdown((prev) => (prev !== null ? prev - 1 : null))
-      }, 1000)
-    }
-
-    if (!loading) {
-      setCountdown(null) // zastav odpočítavanie, keď sa načítavanie skončí
-    }
-
-    return () => clearInterval(timer)
-  }, [loading, countdown])
+  const [totalTokens, setTotalTokens] = useState(0)
 
   const toggleCollapse = (nodeId: string) => {
     setCollapsedNodes((prev) => {
@@ -111,9 +89,9 @@ function App() {
     e.preventDefault()
     setLoading(true)
     setError('')
-    setResponse('')
     setDialogue([])
-    setCountdown(300)
+    setCountdown(0)
+    setTotalTokens(0)
 
     try {
       const res = await fetch('http://localhost:8000/api/chat-stream', {
@@ -144,9 +122,12 @@ function App() {
         for (const evt of events) {
           if (evt.startsWith('data:')) {
             const json = JSON.parse(evt.slice(5).trim())
-            const { agent, token } = json
+            const { agent, token, total_tokens } = json
 
-            // nájdi poslednú repliku od daného agenta
+            // Aktuálne aktualizujeme totalTokens
+            setTotalTokens(total_tokens)
+
+            // Nájdeme poslednú repliku od daného agenta
             const lastItem = runningDialogue[runningDialogue.length - 1]
             if (!lastItem || lastItem.agent !== agent) {
               runningDialogue.push({
@@ -159,13 +140,8 @@ function App() {
               lastItem.response += token
             }
 
-            // aktualizuj stav priebežne
+            // Aktualizujeme stav priebežne
             setDialogue([...runningDialogue])
-            setResponse(
-              runningDialogue
-                .map((d) => `${d.agent}: ${d.response}`)
-                .join('\n\n')
-            )
             dialogueToFlow(runningDialogue)
           }
         }
@@ -194,17 +170,16 @@ function App() {
           setInput={setInput}
           handleSubmit={handleSubmit}
           loading={loading}
-          countdown={countdown}
         />
 
+        {error && <p style={{ color: 'red' }}>{error}</p>}
         <div style={{ marginTop: '2rem' }}>
-          {loading && <p>Čakám na odpoveď...</p>}
-          {error && <p style={{ color: 'red' }}>{error}</p>}
-          {!loading && !error && response && (
-            <>
-              <strong>Odpoveď AI:</strong>
-              <p>{response}</p>
-            </>
+          {loading && (
+            <CountdownTimer
+              countdown={countdown}
+              setCountdown={setCountdown}
+              loading={loading}
+            />
           )}
         </div>
 
@@ -212,14 +187,33 @@ function App() {
           {dialogue.length > 0 && (
             <div style={{ marginTop: '2rem' }}>
               <h3>AI Dialog:</h3>
-              <ChatMessages dialogue={dialogue} />
+              <ChatMessages dialogue={dialogue} totalTokens={totalTokens} />
             </div>
           )}
 
           {dialogue.length > 0 && (
             <div style={{ marginTop: '2rem' }}>
-              <h3>Dialog VIsualisation:</h3>
+              <button
+                onClick={() => setShowVisualization((prev) => !prev)}
+                style={{
+                  padding: '0.5rem 1rem',
+                  backgroundColor: '#1976d2',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                }}
+              >
+                {showVisualization
+                  ? 'Skryť vizualizáciu'
+                  : 'Zobraziť vizualizáciu'}
+              </button>
+            </div>
+          )}
 
+          {dialogue.length > 0 && showVisualization && (
+            <div style={{ marginTop: '2rem' }}>
+              <h3>Dialog VIsualisation:</h3>
               <DialogVisualization
                 nodes={nodes}
                 edges={edges}
@@ -228,16 +222,6 @@ function App() {
             </div>
           )}
         </div>
-
-        {/* Inline CSS pre animáciu */}
-        <style>
-          {`
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-        `}
-        </style>
       </div>
     </ChatProvider>
   )

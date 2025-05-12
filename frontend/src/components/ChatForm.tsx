@@ -7,7 +7,6 @@ interface ChatFormProps {
   setInput: (input: string) => void
   handleSubmit: (e: React.FormEvent<HTMLFormElement>) => void
   loading: boolean
-  countdown: number | null
 }
 
 const ChatForm: React.FC<ChatFormProps> = ({
@@ -15,7 +14,6 @@ const ChatForm: React.FC<ChatFormProps> = ({
   setInput,
   handleSubmit,
   loading,
-  countdown,
 }) => {
   return (
     <form onSubmit={handleSubmit}>
@@ -28,23 +26,19 @@ const ChatForm: React.FC<ChatFormProps> = ({
       />
 
       {loading ? (
-        // <LoadingIndicator countdown={countdown} />
-        <div className=''>
-          <div
-            style={{
-              display: 'inline-block',
-              marginLeft: '1rem',
-              width: '24px',
-              height: '24px',
-              border: '3px solid #ccc',
-              borderTop: '3px solid #333',
-              borderRadius: '50%',
-              animation: 'spin 1s linear infinite',
-              verticalAlign: 'middle',
-            }}
-          />
-          <span>{countdown}s</span>
-        </div>
+        <div
+          style={{
+            display: 'inline-block',
+            marginLeft: '1rem',
+            width: '24px',
+            height: '24px',
+            border: '3px solid #ccc',
+            borderTop: '3px solid #333',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            verticalAlign: 'middle',
+          }}
+        />
       ) : (
         <button
           type='submit'
@@ -54,6 +48,15 @@ const ChatForm: React.FC<ChatFormProps> = ({
           Poslať
         </button>
       )}
+      {/* Inline CSS pre animáciu */}
+      <style>
+        {`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}
+      </style>
     </form>
   )
 }
