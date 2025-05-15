@@ -7,6 +7,22 @@ services:
     volumes:
       - ollama_data:/root/.ollama
 
+  vllm:
+    image: vllm/vllm-openai
+    ports:
+      - '8001:8000' # 8000 v kontajneri, ale expose ako 8001
+    command: --model-path meta-llama/Meta-Llama-3-8B-Instruct
+
+  sglang:
+    image: lmsysorg/sglang
+    ports:
+      - '8100:8100'
+    environment:
+      - MODEL_NAME=llama3
+      - ENGINE_URL=http://vllm:8000
+    depends_on:
+      - vllm
+
   backend:
     build: ./backend
     ports:
@@ -14,6 +30,7 @@ services:
     # Závisí od: ollama – backend čaká, kým sa spustí.
     depends_on:
       - ollama
+      - sglang
     # Exportovanie metriky pre Prometheus
     expose:
       - '8000'

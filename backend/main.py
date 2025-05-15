@@ -1,5 +1,5 @@
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -8,6 +8,8 @@ from pydantic import BaseModel
 import httpx
 import json
 import asyncio
+from time import perf_counter
+
 
 app = FastAPI()
 
@@ -20,23 +22,27 @@ instrumentator.instrument(app).expose(app)
 # 🔧 CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:3000",
-    ],
-    allow_credentials=True,
+    # allow_origins=[
+    #     "http://localhost:5173",
+    #     "http://localhost:3000",
+    # ],
+    allow_origins=["*"],  # Povolené všetky zdroje
+    allow_credentials=False, 
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# URL pre jednotlivé enginy
 OLLAMA_URL = "http://ollama:11434/api/generate"
+# SGLANG_URL = "http://sglang:11434/api/generate"  # uprav podľa reality
 
 class ChatRequest(BaseModel):
-    prompt: str  
+    prompt: str
+    engine: str
 
 @app.get("/")
 async def root():
-    return {"message": "Backend is running"}
+    return {"message": "BackendServer is running"}
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
@@ -51,22 +57,27 @@ async def chat(req: ChatRequest):
     current_message = f"{personalities['professor']}\nAnswer the following question:\n{req.prompt}"
     current_speaker = "Professor"
 
-    for i in range(5):
+    for _ in range(5):
         payload = {
             "model": "llama3",
             "prompt": current_message,
             "stream": False
         }
 
+        url = OLLAMA_URL if req.engine == "ollama" else SGLANG_URL
         async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(OLLAMA_URL, json=payload)
+            response = await client.post(url, json=payload)
             data = response.json()
             reply = data["response"].strip()
-            tokens_in_reply = len(reply.split()) # Jednoduchý odhad
+            tokens_in_reply = len(reply.split())
             total_tokens += tokens_in_reply
-            token_usage_gauge.inc(tokens_in_reply) # Zvýšte metriku
+            token_usage_gauge.inc(tokens_in_reply)
 
-        dialogue.append({"agent": current_speaker, "response": reply, "tokens": tokens_in_reply})
+        dialogue.append({
+            "agent": current_speaker,
+            "response": reply,
+            "tokens": tokens_in_reply
+        })
 
         if current_speaker == "Professor":
             current_speaker = "Student"
@@ -132,3 +143,42 @@ async def chat_stream(req: ChatRequest):
                 current_message = f"{personalities['professor']}\nHere is what the student said:\n\"{token}\"\nNow respond to the student."
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+# Optional generic fallback
+@app.post("/chat")  
+async def generic_chat(request: ChatRequest):
+    if request.engine == "ollama":
+        return await chat(request)
+    elif request.engine == "sglang":
+        return await chat(request)  # Replace with `query_sglang` when implemented
+    else:
+        raise HTTPException(status_code=400, detail="Unknown engine")
+    
+
+@app.post("/api/compare")
+async def compare_engines(req: ChatRequest):
+    prompt = req.prompt
+
+    # Spustenie Ollama
+    start_ollama = perf_counter()
+    ollama_result = await handle_ollama_chat(prompt)
+    duration_ollama = perf_counter() - start_ollama
+
+    # Spustenie SGLang
+    start_sglang = perf_counter()
+    sglang_result = await handle_sglang_chat(prompt)
+    duration_sglang = perf_counter() - start_sglang
+
+    return {
+        "prompt": prompt,
+        "ollama": {
+            "reply": ollama_result["reply"],
+            "tokens": ollama_result["totalTokens"],
+            "time_sec": round(duration_ollama, 2)
+        },
+        "sglang": {
+            "reply": sglang_result["reply"],
+            "tokens": sglang_result["totalTokens"],
+            "time_sec": round(duration_sglang, 2)
+        }
+    }

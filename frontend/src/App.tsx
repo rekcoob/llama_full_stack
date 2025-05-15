@@ -4,10 +4,12 @@ import DialogVisualization from './components/DialogVisualization'
 import PersonalitySelector from './components/PersonalitySelector'
 import ChatMessages from './components/ChatMessages'
 import CountdownTimer from './components/CountdownTimer'
+import EngineSelector from './components/EngineSelector'
 import { ChatProvider } from './context/ChatContext'
 import { type Edge, type Node, Position } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { DialogueItem } from './types'
+import QuestionSelector from './components/QuestionSelector'
 
 function App() {
   const [input, setInput] = useState('')
@@ -24,6 +26,7 @@ function App() {
   const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(new Set())
 
   const [totalTokens, setTotalTokens] = useState(0)
+  const [engine, setEngine] = useState('ollama')
 
   const toggleCollapse = (nodeId: string) => {
     setCollapsedNodes((prev) => {
@@ -94,58 +97,64 @@ function App() {
     setTotalTokens(0)
 
     try {
-      const res = await fetch('http://localhost:8000/api/chat-stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: input }),
-      })
+      // Zavoláme obe fetch simultánne
+      const urls = [
+        'http://192.168.49.2:30080/api/chat-stream',
+        'http://backend:8000/api/chat-stream',
+      ]
 
-      if (!res.ok || !res.body) {
-        throw new Error(`Stream error: ${res.status}`)
-      }
+      // Funkcia na spracovanie jedného streamu
+      const processStream = async (res: Response) => {
+        if (!res.ok || !res.body) {
+          throw new Error(`Stream error: ${res.status}`)
+        }
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder('utf-8')
+        let buffer = ''
+        const runningDialogue: DialogueItem[] = []
 
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder('utf-8')
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          const events = buffer.split('\n\n')
+          buffer = events.pop() || ''
 
-      let buffer = ''
-      const runningDialogue: DialogueItem[] = []
+          for (const evt of events) {
+            if (evt.startsWith('data:')) {
+              const json = JSON.parse(evt.slice(5).trim())
+              const { agent, token, total_tokens } = json
+              setTotalTokens(total_tokens)
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
+              const lastItem = runningDialogue[runningDialogue.length - 1]
+              if (!lastItem || lastItem.agent !== agent) {
+                runningDialogue.push({
+                  agent,
+                  response: token,
+                  timestamp: new Date().toLocaleTimeString(),
+                  score: Math.random(),
+                })
+              } else {
+                lastItem.response += token
+              }
 
-        buffer += decoder.decode(value, { stream: true })
-
-        const events = buffer.split('\n\n')
-        buffer = events.pop() || ''
-
-        for (const evt of events) {
-          if (evt.startsWith('data:')) {
-            const json = JSON.parse(evt.slice(5).trim())
-            const { agent, token, total_tokens } = json
-
-            // Aktuálne aktualizujeme totalTokens
-            setTotalTokens(total_tokens)
-
-            // Nájdeme poslednú repliku od daného agenta
-            const lastItem = runningDialogue[runningDialogue.length - 1]
-            if (!lastItem || lastItem.agent !== agent) {
-              runningDialogue.push({
-                agent,
-                response: token,
-                timestamp: new Date().toLocaleTimeString(),
-                score: Math.random(), // alebo pevne 0.85
-              })
-            } else {
-              lastItem.response += token
+              setDialogue((prev) => [...prev, ...runningDialogue])
+              dialogueToFlow(runningDialogue)
             }
-
-            // Aktualizujeme stav priebežne
-            setDialogue([...runningDialogue])
-            dialogueToFlow(runningDialogue)
           }
         }
       }
+
+      // Zavoláme obe fetch simultánne a spracujeme oba streamy paralelne
+      const fetches = urls.map((url) =>
+        fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: input, engine }),
+        }).then(processStream)
+      )
+
+      await Promise.all(fetches)
     } catch (err) {
       console.error(err)
       setError('Chyba pri načítaní streamu.')
@@ -153,16 +162,18 @@ function App() {
       setLoading(false)
     }
   }
-
   return (
     <ChatProvider>
       <div style={{ padding: '2rem' }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <h1>AI Chat</h1>
-          <PersonalitySelector
-            personality={personality}
-            setPersonality={setPersonality}
-          />
+          <h1>AIE Chat</h1>
+          <div style={{ display: 'none' }}>
+            <PersonalitySelector
+              personality={personality}
+              setPersonality={setPersonality}
+            />
+          </div>
+          <EngineSelector engine={engine} setEngine={setEngine} />
         </div>
 
         <ChatForm
@@ -182,6 +193,8 @@ function App() {
             />
           )}
         </div>
+
+        <QuestionSelector setInput={setInput} />
 
         <div style={{ marginTop: '2rem' }}>
           {dialogue.length > 0 && (
